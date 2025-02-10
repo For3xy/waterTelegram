@@ -17,7 +17,7 @@ var db *sql.DB
 func InitDB() {
 	var err error
 	db, err = sql.Open("sqlite3", "./subscriptions.db")
-	if err != nil {
+	if err != nil { // если нет, можно попробовать пересоздать файлик и заново подключиться, если не, то тогда уж помирать
 		log.Fatal(err)
 	}
 
