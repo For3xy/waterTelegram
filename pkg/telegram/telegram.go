@@ -20,6 +20,7 @@ type Post struct {
 	Id   float64   `json:"id"`
 	Text string    `json:"text"`
 	Date time.Time `json:"date"`
+	// можно добавить поле типа массива, куда при получении будут складываться названия улиц, например
 }
 
 var userAction = make(map[int64]string)
@@ -184,7 +185,11 @@ func extractTextFields(data map[string]interface{}) []Post {
 	return posts
 }
 
-func getPosts() []Post {
+// вот тут бы разлучить логику получения постов и телеграм, отдельный пакет напрашивается
+// телеграм - отвечает за телеграм (коммуникация), посты - за посты 
+// много вызовов getPosts(), но достаточно 1 получения постов из АПИ, остальные можно просто хранить до следующего обновления
+func getPosts() []Post { 
+	// url хоста просится в константу
 	url := fmt.Sprintf("https://api.vk.com/method/wall.get?access_token=%v&v=%v&domain=%s", config.LoadConfig().SrvAccessKey, config.LoadConfig().Version, config.LoadConfig().Domain)
 	resp, err := http.Get(url)
 	if err != nil {
@@ -220,6 +225,7 @@ func findPostsByData(posts []Post, street, number string) []Post {
 	return foundPosts
 }
 
+// чекер и нотифаер - 2 разные сущности
 func CheckAndNotifyUsers(bot *tgbotapi.BotAPI) {
 	subscriptions, err := database.GetAllSubscriptions()
 	if err != nil {
