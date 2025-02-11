@@ -7,17 +7,18 @@ import (
 	"time"
 	"waterTelegram/config"
 	"waterTelegram/pkg/database"
+	"waterTelegram/pkg/scheduler"
 	"waterTelegram/pkg/telegram"
 
 	_ "github.com/mattn/go-sqlite3"
 )
 
 func main() {
-	config := config.LoadConfig()
+	cfg := config.LoadConfig()
 
 	database.InitDB()
 
-	bot, err := telegram.InitTelegramBot(config)
+	bot, err := telegram.InitTelegramBot(cfg)
 	if err != nil {
 		log.Fatal("Ошибка при инициализации бота:", err)
 		os.Exit(1)
@@ -25,15 +26,17 @@ func main() {
 
 	fmt.Println("Бот успешно запущен")
 
+	scheduler.StartScheduler()
+
 	go telegram.ProcessMessage(bot)
 
-	ticket := time.NewTicker(time.Duration(config.AutosaveInterval) * time.Second)
+	ticket := time.NewTicker(time.Duration(cfg.AutosaveInterval) * time.Second)
 	defer ticket.Stop()
 
 	for {
 		select {
 		case <-ticket.C:
-			telegram.CheckAndNotifyUsers(bot)
+			telegram.SendNotificationsSubs(bot)
 		}
 	}
 
