@@ -43,19 +43,19 @@ func ProcessMessage(bot *tgbotapi.BotAPI) {
 func handleCallbackQuery(bot *tgbotapi.BotAPI, callbackQuery *tgbotapi.CallbackQuery) {
 	chatID := callbackQuery.Message.Chat.ID
 	switch callbackQuery.Data {
-	case "subscribe":
-		userAction[chatID] = "subscribe"
-		msg := tgbotapi.NewMessage(callbackQuery.Message.Chat.ID, "Введите адрес для подписки. Пример: Куйбышева 8")
-		bot.Send(msg)
-
-	case "unsubscribe":
-		err := database.DeleteSubscription(callbackQuery.Message.Chat.ID)
+	case "deleteAll":
+		err := database.DeleteSubscription(chatID)
 		if err != nil {
-			msg := tgbotapi.NewMessage(callbackQuery.Message.Chat.ID, "❌ Ошибка при отписке")
+			msg := tgbotapi.NewMessage(chatID, "❌ Ошибка при отписке")
 			bot.Send(msg)
 			return
 		}
-		msg := tgbotapi.NewMessage(callbackQuery.Message.Chat.ID, "✅ Вы успешно отписались от рассылки")
+		msg := tgbotapi.NewMessage(chatID, "✅ Вы успешно отписались от рассылки")
+		bot.Send(msg)
+
+	case "deleteMany":
+		userAction[chatID] = "deleteMany"
+		msg := tgbotapi.NewMessage(chatID, "Введите адреса для удаления, разделенные запятой.\nПример: 'Куйбышева 8, Ленина'")
 		bot.Send(msg)
 	}
 }
@@ -66,36 +66,113 @@ func handleMessage(bot *tgbotapi.BotAPI, message *tgbotapi.Message) {
 
 	switch message.Text {
 	case "/start":
-		msg := tgbotapi.NewMessage(message.Chat.ID, "Привет! Я - бот для оповещения об отключении водоснабжения в Тамбове. Введите адрес для подписки. Пример: Куйбышева 8")
-		keyboard := tgbotapi.NewInlineKeyboardMarkup(
-			tgbotapi.NewInlineKeyboardRow(
-				tgbotapi.NewInlineKeyboardButtonData("Подписаться", "subscribe"),
-				tgbotapi.NewInlineKeyboardButtonData("Отписаться", "unsubscribe"),
+		msg := tgbotapi.NewMessage(chatID, "Привет! Я - бот для оповещения об отключении водоснабжения в Тамбове. Введите адрес для подписки. Пример: Куйбышева 8")
+		keyboard := tgbotapi.NewReplyKeyboard(
+			tgbotapi.NewKeyboardButtonRow(
+				tgbotapi.NewKeyboardButton("Подписаться"),
+				tgbotapi.NewKeyboardButton("Отписаться"),
+			),
+			tgbotapi.NewKeyboardButtonRow(
+				tgbotapi.NewKeyboardButton("Мои подписки"),
 			),
 		)
 		msg.ReplyMarkup = keyboard
 		bot.Send(msg)
+
+	case "Подписаться":
+		userAction[chatID] = "subscribe"
+		msg := tgbotapi.NewMessage(chatID, "Введите адрес для подписки. Пример: Куйбышева 8")
+		bot.Send(msg)
+
+	case "Отписаться":
+		msg := tgbotapi.NewMessage(chatID, "Выберите: Удалить все подписки или выборочно")
+
+		keyboard := tgbotapi.NewInlineKeyboardMarkup(
+			tgbotapi.NewInlineKeyboardRow(
+				tgbotapi.NewInlineKeyboardButtonData("Удалить все подписки", "deleteAll"),
+				tgbotapi.NewInlineKeyboardButtonData("Удалить несколько подписок", "deleteMany"),
+			),
+		)
+		msg.ReplyMarkup = keyboard
+		bot.Send(msg)
+		break
+
+	case "Мои подписки":
+		subs, err := database.GetAllSubscriptionsByChatID(chatID)
+		if err != nil {
+			bot.Send(tgbotapi.NewMessage(message.Chat.ID, "❌ Ошибка при получении списка адресов пользователя"))
+			return
+		}
+
+		if len(subs) == 0 {
+			bot.Send(tgbotapi.NewMessage(chatID, "ℹ️ У вас нет активных подписок."))
+			return
+		}
+
+		var msgText strings.Builder
+		msgText.WriteString("📋 Ваши подписки:\n\n")
+
+		for i, sub := range subs {
+			msgText.WriteString(fmt.Sprintf("%d. %s %s\n", i+1, sub.Street, sub.Number))
+		}
+		bot.Send(tgbotapi.NewMessage(chatID, msgText.String()))
+
 	case "/help":
 		bot.Send(tgbotapi.NewMessage(message.Chat.ID, "Раздел в разработке..."))
 	case "/admin":
 		bot.Send(tgbotapi.NewMessage(message.Chat.ID, "https://www.youtube.com/watch?v=zXz0InOf-z0"))
 	default:
-		street, number := post.ParseAddress(message.Text)
-		if street == "" {
-			bot.Send(tgbotapi.NewMessage(message.Chat.ID, "❌ Введите корректный адрес"))
-		}
 		if action, exists := userAction[chatID]; exists {
-			delete(userAction, chatID)
-			if action == "subscribe" {
+			switch action {
+			case "subscribe":
+				street, number := post.ParseAddress(message.Text)
+				if street == "" {
+					bot.Send(tgbotapi.NewMessage(chatID, "❌ Введите корректный адрес"))
+					return
+				}
+				delete(userAction, chatID)
 				lastPostID := GetLastPostID()
 				err := database.SaveAddress(chatID, street, number, lastPostID)
 				if err != nil {
-					bot.Send(tgbotapi.NewMessage(message.Chat.ID, "❌ Ошибка при сохранении адреса"))
+					bot.Send(tgbotapi.NewMessage(chatID, "❌ Ошибка при сохранении адреса"))
 					return
 				}
-				bot.Send(tgbotapi.NewMessage(message.Chat.ID, "✅ Адрес успешно сохранен. Вы будете получать уведомления о новых постах."))
+				bot.Send(tgbotapi.NewMessage(chatID, "✅ Адрес успешно сохранен. Вы будете получать уведомления о новых постах."))
+				return
+
+			case "deleteMany":
+				addresses := strings.Split(message.Text, ",")
+				var deletedCount int
+				for _, addr := range addresses {
+					addr = strings.TrimSpace(addr)
+					if addr == "" {
+						continue
+					}
+					street, number := post.ParseAddress(addr)
+					if street == "" {
+						continue
+					}
+					err := database.DeleteManySubscription(chatID, street, number)
+					if err != nil {
+						log.Printf("Ошибка удаления записи %q: %v", addr, err)
+						continue
+					}
+					deletedCount++
+				}
+				delete(userAction, chatID)
+				if deletedCount > 0 {
+					bot.Send(tgbotapi.NewMessage(chatID, fmt.Sprintf("✅ Успешно удалено %d записей", deletedCount)))
+				} else {
+					bot.Send(tgbotapi.NewMessage(chatID, "❌ Не удалось удалить ни одной записи. Проверьте введенные адреса."))
+				}
+				return
 			}
-			return
+
+		}
+
+		street, number := post.ParseAddress(message.Text)
+		if street == "" {
+			bot.Send(tgbotapi.NewMessage(message.Chat.ID, "❌ Введите корректный адрес"))
 		}
 
 		posts := repository.GetPosts()

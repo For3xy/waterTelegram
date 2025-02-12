@@ -30,12 +30,12 @@ func main() {
 
 	go telegram.ProcessMessage(bot)
 
-	ticket := time.NewTicker(time.Duration(cfg.AutosaveInterval) * time.Second)
-	defer ticket.Stop()
+	ticker := time.NewTicker(time.Duration(cfg.AutosaveInterval) * time.Second)
+	defer ticker.Stop()
 
 	for {
 		select {
-		case <-ticket.C:
+		case <-ticker.C:
 			telegram.SendNotificationsSubs(bot)
 		}
 	}

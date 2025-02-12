@@ -88,25 +88,19 @@ func ParseAddress(address string) (street, number string) {
 		return "", ""
 	}
 
-	lastPart := parts[len(parts)-1]
-	if IsNumber(lastPart) {
-		number = lastPart
-		if len(parts) > 1 {
-			street = strings.Join(parts[:len(parts)-1], " ")
-		}
+	if len(parts) == 1 {
+		return parts[0], ""
+	}
+
+	lastElement := parts[len(parts)-1]
+	hasDigit := strings.IndexFunc(lastElement, unicode.IsDigit) != -1
+	if hasDigit {
+		number = lastElement
+		street = strings.Join(parts[:len(parts)-1], " ")
 	} else {
-		street = strings.Join(parts, " ")
+		street = address
+		number = ""
 	}
-	return
+
+	return street, number
 }
-
-func IsNumber(s string) bool {
-	for _, c := range s {
-		if !unicode.IsDigit(c) {
-			return false
-		}
-	}
-	return len(s) > 0
-}
-
-
